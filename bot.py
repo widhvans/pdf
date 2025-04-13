@@ -19,8 +19,6 @@ from reportlab.platypus import (
     Spacer,
     ListFlowable,
     ListItem,
-    Table,
-    TableStyle,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
@@ -28,29 +26,40 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from config import BOT_TOKEN, WATERMARK_TEXT
 
-# Register a Unicode font for multilingual support (e.g., Hindi)
-pdfmetrics.registerFont(TTFont('NotoSans', 'NotoSans-Regular.ttf'))
-pdfmetrics.registerFont(TTFont('NotoSans-Bold', 'NotoSans-Bold.ttf'))
+# Font setup with error handling
+try:
+    pdfmetrics.registerFont(TTFont('NotoSans', 'NotoSans-Regular.ttf'))
+    pdfmetrics.registerFont(TTFont('NotoSans-Bold', 'NotoSans-Bold.ttf'))
+    FONT_NORMAL = 'NotoSans'
+    FONT_BOLD = 'NotoSans-Bold'
+    FONT_AVAILABLE = True
+except Exception as e:
+    print(f"Font loading failed: {e}. Falling back to Helvetica.")
+    FONT_NORMAL = 'Helvetica'
+    FONT_BOLD = 'Helvetica-Bold'
+    FONT_AVAILABLE = False
 
 # Conversation state
 INPUT_TEXT = 1
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['text_list'] = []  # Store all messages
+    context.user_data['text_list'] = []
     context.user_data['pdf_filename'] = f"study_notes_{update.message.from_user.id}.pdf"
-    await update.message.reply_text(
+    welcome_message = (
         "Welcome to StudyBuddy PDF Bot! 📚✨\n"
         "Send your study notes (in any language, like Hindi or English).\n"
         "Use *text* for highlights, # for headings, or - for lists.\n"
         "Each message builds one beautiful PDF. Use /finish to get it, or /cancel to stop."
     )
+    if not FONT_AVAILABLE:
+        welcome_message += "\n⚠️ Note: Hindi support may be limited without NotoSans fonts."
+    await update.message.reply_text(welcome_message)
     return INPUT_TEXT
 
 async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_text = update.message.text
-    context.user_data['text_list'].append(user_text)  # Append in sequence
+    context.user_data['text_list'].append(user_text)
     
-    # Generate or update PDF
     try:
         generate_pdf(context.user_data['text_list'], context.user_data['pdf_filename'])
         await update.message.reply_text("Added to your PDF! Keep sending notes or use /finish to download.")
@@ -65,7 +74,6 @@ async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("No notes added yet! Send some text or use /cancel.")
         return INPUT_TEXT
     
-    # Send the final PDF
     try:
         with open(pdf_filename, 'rb') as pdf_file:
             await update.message.reply_document(
@@ -73,8 +81,8 @@ async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 filename="YourStudyNotes.pdf",
                 caption="Your stunning study notes are ready! 📝✨ Start again with /start."
             )
-        os.remove(pdf_filename)  # Clean up
-        context.user_data['text_list'] = []  # Clear data
+        os.remove(pdf_filename)
+        context.user_data['text_list'] = []
     except Exception as e:
         await update.message.reply_text(f"Error sending PDF: {str(e)}")
     
@@ -83,13 +91,12 @@ async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pdf_filename = context.user_data.get('pdf_filename')
     if os.path.exists(pdf_filename):
-        os.remove(pdf_filename)  # Clean up
-    context.user_data['text_list'] = []  # Clear data
+        os.remove(pdf_filename)
+    context.user_data['text_list'] = []
     await update.message.reply_text("Cancelled. Start fresh with /start! 🚀")
     return ConversationHandler.END
 
 def generate_pdf(text_list, filename):
-    # Create PDF
     doc = SimpleDocTemplate(
         filename,
         pagesize=letter,
@@ -100,19 +107,18 @@ def generate_pdf(text_list, filename):
     )
     styles = getSampleStyleSheet()
     
-    # Custom styles for study notes
     normal_style = ParagraphStyle(
         name='NormalCustom',
-        fontName='NotoSans',
+        fontName=FONT_NORMAL,
         fontSize=12,
         leading=16,
         textColor=colors.black,
         spaceAfter=10,
-        alignment=0,  # Left-aligned
+        alignment=0,
     )
     bold_style = ParagraphStyle(
         name='BoldCustom',
-        fontName='NotoSans-Bold',
+        fontName=FONT_BOLD,
         fontSize=12,
         leading=16,
         textColor=colors.black,
@@ -120,7 +126,7 @@ def generate_pdf(text_list, filename):
     )
     heading_style = ParagraphStyle(
         name='HeadingCustom',
-        fontName='NotoSans-Bold',
+        fontName=FONT_BOLD,
         fontSize=16,
         leading=20,
         textColor=colors.darkblue,
@@ -129,7 +135,7 @@ def generate_pdf(text_list, filename):
     )
     highlight_style = ParagraphStyle(
         name='HighlightCustom',
-        fontName='NotoSans-Bold',
+        fontName=FONT_BOLD,
         fontSize=12,
         leading=16,
         textColor=colors.darkred,
@@ -137,7 +143,6 @@ def generate_pdf(text_list, filename):
         spaceAfter=10,
     )
     
-    # Build content
     story = []
     
     for text in text_list:
@@ -160,13 +165,11 @@ def generate_pdf(text_list, filename):
                 story.append(Spacer(1, 8))
                 continue
             
-            # Detect headings (starting with #)
             if line.startswith('#'):
                 clean_line = line[1:].strip()
                 story.append(Paragraph(format_text(clean_line, normal_style, bold_style, highlight_style), heading_style))
                 continue
             
-            # Detect list items (-, *, or numbers)
             if re.match(r'^[-*]|\d+\.', line):
                 if not in_list:
                     in_list = True
@@ -182,7 +185,6 @@ def generate_pdf(text_list, filename):
                     ))
                     list_items = []
                     in_list = False
-                # Highlight entire line if it’s an “answer” (e.g., *text* or standalone)
                 formatted_line = format_text(line, normal_style, bold_style, highlight_style)
                 story.append(Paragraph(formatted_line, highlight_style if '*' in line else normal_style))
         
@@ -194,42 +196,35 @@ def generate_pdf(text_list, filename):
                 leftIndent=20,
             ))
     
-    # Custom canvas for watermarks
     def add_watermarks(canvas, doc):
         canvas.saveState()
-        # White background
         canvas.setFillColor(colors.white)
         canvas.rect(0, 0, letter[0], letter[1], fill=1)
         
-        # Border watermark (small, repeating)
-        canvas.setFont("NotoSans", 8)
+        canvas.setFont(FONT_NORMAL, 8)
         canvas.setFillColor(colors.grey, alpha=0.5)
-        text_width = pdfmetrics.stringWidth(WATERMARK_TEXT, "NotoSans", 8)
+        text_width = pdfmetrics.stringWidth(WATERMARK_TEXT, FONT_NORMAL, 8)
         spacing = 10
-        # Top and bottom borders
         for x in range(-50, int(letter[0]), int(text_width + spacing)):
             canvas.drawString(x, letter[1] - 15, WATERMARK_TEXT)
             canvas.drawString(x, 5, WATERMARK_TEXT)
-        # Left and right borders (vertical)
         canvas.rotate(90)
         for y in range(-50, int(letter[1]), int(text_width + spacing)):
             canvas.drawString(y, -letter[0] + 15, WATERMARK_TEXT)
             canvas.drawString(y, -5, WATERMARK_TEXT)
         canvas.rotate(-90)
         
-        # Centered watermark
-        canvas.setFont("NotoSans", 40)
+        canvas.setFont(FONT_NORMAL, 40)
         canvas.setFillColor(colors.grey, alpha=0.1)
         canvas.rotate(45)
         canvas.drawCentredString(letter[0]/2, -letter[1]/2, WATERMARK_TEXT)
         
         canvas.restoreState()
     
-    # Add header/footer
     def add_header_footer(canvas, doc):
         add_watermarks(canvas, doc)
         canvas.saveState()
-        canvas.setFont("NotoSans", 10)
+        canvas.setFont(FONT_NORMAL, 10)
         canvas.setFillColor(colors.grey)
         canvas.drawString(0.75*inch, 0.5*inch, f"StudyBuddy Notes | Page {doc.page}")
         canvas.drawRightString(letter[0] - 0.75*inch, 0.5*inch, "Created with StudyBuddy Bot")
@@ -238,10 +233,8 @@ def generate_pdf(text_list, filename):
     doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
 
 def format_text(text, normal_style, bold_style, highlight_style):
-    # Highlight *text* in bold and red
-    formatted = re.sub(r'\*(.*?)\*', r'<font name="NotoSans-Bold" color="darkred">\1</font>', text)
-    # Escape special characters
-    formatted = formatted.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    formatted = re.sub(r'\*(.*?)\*', f'<font name="{FONT_BOLD}" color="darkred">\1</font>', text)
+    formatted = formatted.replace('&', '&').replace('<', '<').replace('>', '>')
     return formatted
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
