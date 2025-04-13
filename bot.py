@@ -26,29 +26,7 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from config import BOT_TOKEN, WATERMARK_TEXT
-
-# Try to register DejaVuSans, fall back to Helvetica
-FONT_NORMAL = 'Helvetica'
-FONT_BOLD = 'Helvetica-Bold'
-FONT_AVAILABLE = False
-
-try:
-    # Use system DejaVuSans if available
-    font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
-    if os.path.exists(font_path):
-        pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
-        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
-        FONT_NORMAL = 'DejaVuSans'
-        FONT_BOLD = 'DejaVuSans-Bold'
-        FONT_AVAILABLE = True
-        print("Loaded DejaVuSans for Hindi support.")
-    else:
-        print("DejaVuSans not found, using Helvetica with Hindi fallback.")
-except Exception as e:
-    print(f"Font error: {e}. Using Helvetica.")
 
 # Hindi keywords with colors
 HINDI_KEYWORDS = {
@@ -67,13 +45,16 @@ HINDI_KEYWORDS = {
     'अभ्यास': ('exercise', colors.blue),
 }
 
-# Motivational badges
-BADGES = [
-    "Brain Buster! 🧠",
-    "Knowledge King! 👑",
-    "Quiz Wizard! 🪄",
-    "Study Star! ⭐",
-]
+# Study stickers
+STICKERS = ['🧠', '⭐', '🚀', '🎯']
+
+# Mnemonics for answers
+MNEMONICS = {
+    'आर्यभट्ट': 'A for Aryabhata, India’s first satellite!',
+    'गंगोत्री': 'G for Gangotri, where Ganga begins!',
+    'डॉ. राजेंद्र प्रसाद': 'R for Rajendra, India’s first president!',
+    '5 जून': 'June 5, green day for the planet!'
+}
 
 # Parse slide structure
 def parse_slide(text):
@@ -108,11 +89,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['question_count'] = 0
     context.user_data['pdf_filename'] = f"study_notes_{update.message.from_user.id}.pdf"
     await update.message.reply_text(
-        "Welcome to StudyBuddy Quiz Bot! 📚🎉\n"
+        "Welcome to StudyBuddy Quiz Bot! 📚🌟\n"
         "Send your quiz slides (Hindi, English, anything!).\n"
-        "Format like: #### Slide X, Title, Question, Options, Answer.\n"
-        "PDF builds instantly—gorgeous and smart. /finish to download, /cancel to reset.\n"
-        "Get ready for a study glow-up!"
+        "Format: #### Slide X, Title, Question, Options, Answer.\n"
+        "Get a dazzling PDF instantly. /finish to download, /cancel to reset.\n"
+        "Brace for a study masterpiece!"
     )
     return INPUT_TEXT
 
@@ -124,16 +105,16 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     try:
         generate_pdf(context.user_data['text_list'], context.user_data['pdf_filename'], context.user_data['question_count'])
-        await update.message.reply_text("Slide added to your quiz PDF! Keep it coming or /finish to grab it.")
+        await update.message.reply_text("Slide locked in—PDF’s looking 🔥! Add more or /finish to get it.")
     except Exception as e:
-        await update.message.reply_text(f"PDF glitch: {str(e)}. Try again!")
+        await update.message.reply_text(f"PDF error: {str(e)}. Let’s try again!")
     
     return INPUT_TEXT
 
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pdf_filename = context.user_data.get('pdf_filename')
     if not context.user_data.get('text_list') or not os.path.exists(pdf_filename):
-        await update.message.reply_text("No slides yet! Add some or /cancel.")
+        await update.message.reply_text("No slides yet! Drop some or /cancel.")
         return INPUT_TEXT
     
     try:
@@ -141,7 +122,7 @@ async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_document(
                 document=pdf_file,
                 filename="YourQuizSlides.pdf",
-                caption="Your quiz slides are pure 🔥! Start again with /start."
+                caption="Your quiz slides are a masterpiece! 🎉 Start fresh with /start."
             )
         os.remove(pdf_filename)
         context.user_data['text_list'] = []
@@ -157,7 +138,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         os.remove(pdf_filename)
     context.user_data['text_list'] = []
     context.user_data['question_count'] = 0
-    await update.message.reply_text("All cleared! Hit /start to make new magic! 🚀")
+    await update.message.reply_text("Wiped clean! Hit /start for a new quiz! 🚀")
     return ConversationHandler.END
 
 def generate_pdf(text_list, filename, question_count):
@@ -179,7 +160,7 @@ def generate_pdf(text_list, filename, question_count):
     
     normal_style = ParagraphStyle(
         name='NormalCustom',
-        fontName=FONT_NORMAL,
+        fontName='Helvetica',
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.black,
@@ -188,7 +169,7 @@ def generate_pdf(text_list, filename, question_count):
     )
     bold_style = ParagraphStyle(
         name='BoldCustom',
-        fontName=FONT_BOLD,
+        fontName='Helvetica-Bold',
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.black,
@@ -196,24 +177,24 @@ def generate_pdf(text_list, filename, question_count):
     )
     heading_style = ParagraphStyle(
         name='HeadingCustom',
-        fontName=FONT_BOLD,
+        fontName='Helvetica-Bold',
         fontSize=base_font_size + 8,
         leading=base_font_size + 14,
         textColor=colors.navy,
         spaceAfter=16,
         spaceBefore=16,
-        backColor=colors.lightcyan,
+        backColor=colors.lightblue,
         borderPadding=5,
         borderWidth=1,
-        borderColor=colors.cyan,
+        borderColor=colors.blue,
     )
     highlight_style = ParagraphStyle(
         name='HighlightCustom',
-        fontName=FONT_BOLD,
+        fontName='Helvetica-Bold',
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.darkred,
-        backColor=colors.neonyellow,
+        backColor=colors.yellow,
         spaceAfter=12,
         borderPadding=6,
         borderWidth=1.5,
@@ -221,7 +202,7 @@ def generate_pdf(text_list, filename, question_count):
     )
     answer_style = ParagraphStyle(
         name='AnswerCustom',
-        fontName=FONT_BOLD,
+        fontName='Helvetica-Bold',
         fontSize=base_font_size + 2,
         leading=base_font_size + 10,
         textColor=colors.red,
@@ -229,22 +210,22 @@ def generate_pdf(text_list, filename, question_count):
         spaceAfter=12,
         borderPadding=6,
         borderWidth=2,
-        borderColor=colors.red,
+        borderColor=colors.gold,
         alignment=1,
     )
     visual_style = ParagraphStyle(
         name='VisualCustom',
-        fontName=FONT_NORMAL,
+        fontName='Helvetica-Oblique',
         fontSize=base_font_size - 2,
         leading=base_font_size + 4,
-        textColor=colors.grey,
+        textColor=colors.teal,
         spaceAfter=10,
         alignment=0,
         leftIndent=20,
     )
     cover_style = ParagraphStyle(
         name='CoverCustom',
-        fontName=FONT_BOLD,
+        fontName='Helvetica-Bold',
         fontSize=38,
         leading=44,
         textColor=colors.darkblue,
@@ -257,7 +238,7 @@ def generate_pdf(text_list, filename, question_count):
     )
     summary_style = ParagraphStyle(
         name='SummaryCustom',
-        fontName=FONT_NORMAL,
+        fontName='Helvetica',
         fontSize=base_font_size - 2,
         leading=base_font_size + 4,
         textColor=colors.black,
@@ -271,7 +252,7 @@ def generate_pdf(text_list, filename, question_count):
         Spacer(1, 0.5*inch),
         Paragraph("Created with StudyBuddy Bot", normal_style),
         Spacer(1, 0.5*inch),
-        Paragraph(f"Questions: {question_count}", normal_style),
+        Paragraph(f"Questions: {question_count} | Progress: {min(100, question_count * 25)}%", normal_style),
         PageBreak()
     ]
     
@@ -280,10 +261,10 @@ def generate_pdf(text_list, filename, question_count):
     for slide_text in text_list:
         slide = parse_slide(slide_text)
         slide_number = slide['number']
-        badge = random.choice(BADGES)
+        sticker = random.choice(STICKERS)
         
         # Slide header
-        story.append(Paragraph(f"{slide_number} - {badge}", heading_style))
+        story.append(Paragraph(f"{slide_number} {sticker}", heading_style))
         if slide['title']:
             title = slide['title']
             for keyword in HINDI_KEYWORDS:
@@ -341,7 +322,9 @@ def generate_pdf(text_list, filename, question_count):
                 answer_text = content_line.replace('उत्तर:', '').strip()
                 answers_summary.append((slide_number, answer_text))
                 story.append(Paragraph(answer_text, answer_style))
-                story.append(Paragraph("Time to Answer: ~30 seconds", normal_style))
+                mnemonic = MNEMONICS.get(answer_text.split(') ')[-1], 'Memorize this!')
+                story.append(Paragraph(f"Mnemonic: {mnemonic}", normal_style))
+                story.append(Paragraph("Quick Tip: Memorize options in order!", normal_style))
                 continue
             
             if is_question or is_option:
@@ -371,7 +354,7 @@ def generate_pdf(text_list, filename, question_count):
                     in_list = False
                 
                 if is_question:
-                    story.append(Paragraph(content_line, highlight_style))
+                    story.append(Paragraph(content_line + f" {random.choice(STICKERS)}", highlight_style))
                 else:
                     list_items.append(content_line)
             else:
@@ -404,19 +387,19 @@ def generate_pdf(text_list, filename, question_count):
         if slide['layout']:
             story.append(Paragraph(f"Layout: {slide['layout']}", normal_style))
         if slide['visual']:
-            story.append(Paragraph(f"📷 Visual: {slide['visual']}", visual_style))
+            story.append(Paragraph(f"🖼️ Visual: {slide['visual']}", visual_style))
         
         story.append(Spacer(1, 12))
-        story.append(Paragraph("<hr width='85%' color='silver'/>", normal_style))
+        story.append(Paragraph("<hr width='90%' color='silver'/>", normal_style))
     
     # Summary page
     if answers_summary:
         story.append(PageBreak())
-        story.append(Paragraph("Quick Answer Recap", heading_style))
+        story.append(Paragraph("Answer Recap", heading_style))
         summary_data = [["Slide", "Answer"]] + [[slide_num, answer] for slide_num, answer in answers_summary]
         summary_table = Table(summary_data, colWidths=[2*inch, 4*inch])
         summary_table.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, -1), FONT_NORMAL, base_font_size - 2),
+            ('FONT', (0, 0), (-1, -1), 'Helvetica', base_font_size - 2),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.navy),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('GRID', (0, 0), (-1, -1), 1, colors.grey),
@@ -424,7 +407,7 @@ def generate_pdf(text_list, filename, question_count):
         ]))
         story.append(summary_table)
         story.append(Spacer(1, 0.5*inch))
-        story.append(Paragraph("Revise these answers daily! 🎯", normal_style))
+        story.append(Paragraph("Smash these quizzes daily! 💪", normal_style))
     
     # Watermarks and header/footer
     def add_watermarks(canvas, doc):
@@ -432,9 +415,9 @@ def generate_pdf(text_list, filename, question_count):
         canvas.setFillColor(colors.white)
         canvas.rect(0, 0, letter[0], letter[1], fill=1)
         
-        canvas.setFont(FONT_NORMAL, 7)
+        canvas.setFont('Helvetica', 7)
         canvas.setFillColor(colors.grey, alpha=0.3)
-        text_width = canvas.stringWidth(WATERMARK_TEXT, FONT_NORMAL, 7)
+        text_width = canvas.stringWidth(WATERMARK_TEXT, 'Helvetica', 7)
         spacing = 15
         for x in range(-50, int(letter[0]), int(text_width + spacing)):
             canvas.drawString(x, letter[1] - 20, WATERMARK_TEXT)
@@ -445,7 +428,7 @@ def generate_pdf(text_list, filename, question_count):
             canvas.drawString(y, -10, WATERMARK_TEXT)
         canvas.rotate(-90)
         
-        canvas.setFont(FONT_NORMAL, 34)
+        canvas.setFont('Helvetica', 34)
         canvas.setFillColor(colors.grey, alpha=0.07)
         canvas.rotate(45)
         canvas.drawCentredString(letter[0]/2, -letter[1]/2, WATERMARK_TEXT)
@@ -455,16 +438,16 @@ def generate_pdf(text_list, filename, question_count):
     def add_header_footer(canvas, doc):
         add_watermarks(canvas, doc)
         canvas.saveState()
-        canvas.setFont(FONT_NORMAL, 9)
+        canvas.setFont('Helvetica', 9)
         canvas.setFillColor(colors.grey)
         canvas.drawString(1*inch, 0.5*inch, f"StudyBuddy Quiz | Page {doc.page}")
-        canvas.drawRightString(letter[0] - 1*inch, 0.5*inch, random.choice(BADGES))
+        canvas.drawRightString(letter[0] - 1*inch, 0.5*inch, random.choice(STICKERS))
         canvas.restoreState()
     
     doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Oops, hit a bump! Retry or /start fresh. 📚")
+    await update.message.reply_text("Oops, something broke! Retry or /start fresh. 📚")
     print(f"Error: {context.error}")
 
 def main() -> None:
