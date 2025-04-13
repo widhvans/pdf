@@ -32,7 +32,6 @@ FONT_NORMAL = 'Helvetica'
 FONT_BOLD = 'Helvetica-Bold'
 FONT_AVAILABLE = False
 
-# Try Noto Sans first
 try:
     pdfmetrics.registerFont(TTFont('NotoSans', './NotoSans-Regular.ttf'))
     pdfmetrics.registerFont(TTFont('NotoSans-Bold', './NotoSans-Bold.ttf'))
@@ -42,7 +41,6 @@ try:
     print("Loaded NotoSans for Hindi support.")
 except Exception as e:
     print(f"NotoSans failed: {e}")
-    # Try system fonts (Mangal or Lohit-Devanagari)
     try:
         pdfmetrics.registerFont(TTFont('Mangal', '/usr/share/fonts/truetype/mangal/Mangal-Regular.ttf'))
         pdfmetrics.registerFont(TTFont('Mangal-Bold', '/usr/share/fonts/truetype/mangal/Mangal-Bold.ttf'))
@@ -55,7 +53,7 @@ except Exception as e:
         try:
             pdfmetrics.registerFont(TTFont('Lohit', '/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf'))
             FONT_NORMAL = 'Lohit'
-            FONT_BOLD = 'Lohit'  # Lohit doesn’t have bold; reuse regular
+            FONT_BOLD = 'Lohit'  # Lohit lacks bold; reuse regular
             FONT_AVAILABLE = True
             print("Loaded Lohit-Devanagari for Hindi support.")
         except Exception as e3:
@@ -150,7 +148,7 @@ def generate_pdf(text_list, filename):
         name='NormalCustom',
         fontName=FONT_NORMAL,
         fontSize=15,
-        leading=20,
+        leading=22,
         textColor=colors.black,
         spaceAfter=14,
         alignment=0,
@@ -159,7 +157,7 @@ def generate_pdf(text_list, filename):
         name='BoldCustom',
         fontName=FONT_BOLD,
         fontSize=15,
-        leading=20,
+        leading=22,
         textColor=colors.black,
         spaceAfter=14,
     )
@@ -167,7 +165,7 @@ def generate_pdf(text_list, filename):
         name='HeadingCustom',
         fontName=FONT_BOLD,
         fontSize=20,
-        leading=24,
+        leading=26,
         textColor=colors.navy,
         spaceAfter=16,
         spaceBefore=16,
@@ -176,7 +174,7 @@ def generate_pdf(text_list, filename):
         name='HighlightCustom',
         fontName=FONT_BOLD,
         fontSize=15,
-        leading=20,
+        leading=22,
         textColor=colors.darkred,
         backColor=colors.lightyellow,
         spaceAfter=14,
@@ -253,7 +251,7 @@ def generate_pdf(text_list, filename):
                     list_items = []
                     in_list = False
                 formatted_line = format_text(line, normal_style, bold_style, highlight_style)
-                style = highlight_style if any(keyword in line.lower() for keyword in HINDI_KEYWORDS) or '*' in line else normal_style
+                style = highlight_style if any(keyword.lower() in line.lower() for keyword in HINDI_KEYWORDS) or '*' in line else normal_style
                 story.append(Paragraph(formatted_line, style))
         
         if list_items:
@@ -330,7 +328,7 @@ def main() -> None:
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
     print("StudyBuddy Bot is running... 🚀")
-    application.run_polling(allowed_updates=Update_ALL_TYPES)
+    application.run_polling(allowed_updates=Update.ALL_TYPES)  # Fixed typo
 
 if __name__ == "__main__":
     main()
