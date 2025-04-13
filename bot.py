@@ -27,31 +27,41 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from config import BOT_TOKEN, WATERMARK_TEXT
 
-# Font setup with robust error handling
+# Font setup with aggressive Hindi support
 FONT_NORMAL = 'Helvetica'
 FONT_BOLD = 'Helvetica-Bold'
 FONT_AVAILABLE = False
 
+# Try Noto Sans first
 try:
-    pdfmetrics.registerFont(TTFont('NotoSans', 'NotoSans-Regular.ttf'))
-    pdfmetrics.registerFont(TTFont('NotoSans-Bold', 'NotoSans-Bold.ttf'))
+    pdfmetrics.registerFont(TTFont('NotoSans', './NotoSans-Regular.ttf'))
+    pdfmetrics.registerFont(TTFont('NotoSans-Bold', './NotoSans-Bold.ttf'))
     FONT_NORMAL = 'NotoSans'
     FONT_BOLD = 'NotoSans-Bold'
     FONT_AVAILABLE = True
+    print("Loaded NotoSans for Hindi support.")
 except Exception as e:
-    print(f"NotoSans font loading failed: {e}")
+    print(f"NotoSans failed: {e}")
+    # Try system fonts (Mangal or Lohit-Devanagari)
     try:
-        # Fallback to DejaVuSans for Hindi support
-        pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
-        FONT_NORMAL = 'DejaVuSans'
-        FONT_BOLD = 'DejaVuSans-Bold'
+        pdfmetrics.registerFont(TTFont('Mangal', '/usr/share/fonts/truetype/mangal/Mangal-Regular.ttf'))
+        pdfmetrics.registerFont(TTFont('Mangal-Bold', '/usr/share/fonts/truetype/mangal/Mangal-Bold.ttf'))
+        FONT_NORMAL = 'Mangal'
+        FONT_BOLD = 'Mangal-Bold'
         FONT_AVAILABLE = True
-        print("Using DejaVuSans as fallback font.")
+        print("Loaded Mangal for Hindi support.")
     except Exception as e2:
-        print(f"DejaVuSans font loading failed: {e2}. Falling back to Helvetica (Hindi may not render).")
+        print(f"Mangal failed: {e2}")
+        try:
+            pdfmetrics.registerFont(TTFont('Lohit', '/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf'))
+            FONT_NORMAL = 'Lohit'
+            FONT_BOLD = 'Lohit'  # Lohit doesn’t have bold; reuse regular
+            FONT_AVAILABLE = True
+            print("Loaded Lohit-Devanagari for Hindi support.")
+        except Exception as e3:
+            print(f"Lohit failed: {e3}. Using Helvetica (Hindi may not render).")
 
-# Hindi study keywords for special formatting
+# Hindi study keywords
 HINDI_KEYWORDS = {
     'परिभाषा': 'definition',
     'उदाहरण': 'example',
@@ -61,6 +71,8 @@ HINDI_KEYWORDS = {
     'नोट्स': 'notes',
     'अध्याय': 'chapter',
     'विषय': 'topic',
+    'सारांश': 'summary',
+    'प्रमुख': 'key',
 }
 
 # Conversation state
@@ -76,7 +88,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Each message builds one PDF. Use /finish to download, or /cancel to stop."
     )
     if not FONT_AVAILABLE:
-        welcome_message += "\n⚠️ Hindi support may be limited without proper fonts."
+        welcome_message += "\n⚠️ Hindi text may not display correctly without proper fonts."
     await update.message.reply_text(welcome_message)
     return INPUT_TEXT
 
@@ -128,63 +140,63 @@ def generate_pdf(text_list, filename):
         rightMargin=1*inch,
         topMargin=1*inch,
         bottomMargin=1*inch,
-        title="StudyBuddy Notes",
+        title="अध्ययन नोट्स",
         author="StudyBuddy Bot"
     )
     styles = getSampleStyleSheet()
     
-    # Enhanced styles for readability
+    # Styles optimized for Hindi readability
     normal_style = ParagraphStyle(
         name='NormalCustom',
         fontName=FONT_NORMAL,
-        fontSize=14,
-        leading=18,
+        fontSize=15,
+        leading=20,
         textColor=colors.black,
-        spaceAfter=12,
+        spaceAfter=14,
         alignment=0,
     )
     bold_style = ParagraphStyle(
         name='BoldCustom',
         fontName=FONT_BOLD,
-        fontSize=14,
-        leading=18,
+        fontSize=15,
+        leading=20,
         textColor=colors.black,
-        spaceAfter=12,
+        spaceAfter=14,
     )
     heading_style = ParagraphStyle(
         name='HeadingCustom',
         fontName=FONT_BOLD,
-        fontSize=18,
-        leading=22,
+        fontSize=20,
+        leading=24,
         textColor=colors.navy,
-        spaceAfter=14,
-        spaceBefore=14,
+        spaceAfter=16,
+        spaceBefore=16,
     )
     highlight_style = ParagraphStyle(
         name='HighlightCustom',
         fontName=FONT_BOLD,
-        fontSize=14,
-        leading=18,
+        fontSize=15,
+        leading=20,
         textColor=colors.darkred,
         backColor=colors.lightyellow,
-        spaceAfter=12,
-        borderPadding=3,
+        spaceAfter=14,
+        borderPadding=4,
         borderWidth=1,
         borderColor=colors.grey,
     )
     cover_style = ParagraphStyle(
         name='CoverCustom',
         fontName=FONT_BOLD,
-        fontSize=24,
-        leading=30,
+        fontSize=28,
+        leading=34,
         textColor=colors.darkblue,
-        alignment=1,  # Center
-        spaceAfter=20,
+        alignment=1,
+        spaceAfter=24,
     )
     
     # Cover page
     story = [
-        Spacer(1, 2*inch),
+        Spacer(1, 2.5*inch),
         Paragraph("अध्ययन नोट्स | Study Notes", cover_style),
         Paragraph("Created with StudyBuddy Bot", normal_style),
         PageBreak()
@@ -208,23 +220,23 @@ def generate_pdf(text_list, filename):
                     ))
                     list_items = []
                     in_list = False
-                story.append(Spacer(1, 10))
+                story.append(Spacer(1, 12))
                 continue
             
-            # Detect headings (# or Hindi keywords)
+            # Detect headings and Hindi keywords
             is_heading = line.startswith('#')
             clean_line = line[1:].strip() if is_heading else line
             for keyword in HINDI_KEYWORDS:
                 if clean_line.startswith(keyword):
                     is_heading = True
-                    clean_line = clean_line.replace(keyword, f"{keyword} ({HINDI_KEYWORDS[keyword]})")
+                    clean_line = f"{keyword} ({HINDI_KEYWORDS[keyword]})"
                     break
             
             if is_heading:
                 story.append(Paragraph(format_text(clean_line, normal_style, bold_style, highlight_style), heading_style))
                 continue
             
-            # Detect lists (-, *, numbers, or Hindi markers like १., क.)
+            # Detect lists (including Hindi markers)
             if re.match(r'^[-*]|\d+\.|१\.|[क-ह]\.', line):
                 if not in_list:
                     in_list = True
@@ -241,7 +253,7 @@ def generate_pdf(text_list, filename):
                     list_items = []
                     in_list = False
                 formatted_line = format_text(line, normal_style, bold_style, highlight_style)
-                style = highlight_style if any(keyword in line for keyword in HINDI_KEYWORDS) or '*' in line else normal_style
+                style = highlight_style if any(keyword in line.lower() for keyword in HINDI_KEYWORDS) or '*' in line else normal_style
                 story.append(Paragraph(formatted_line, style))
         
         if list_items:
@@ -252,10 +264,10 @@ def generate_pdf(text_list, filename):
                 leftIndent=20,
             ))
         
-        # Add section divider if not the last text
+        # Section divider
         if i < len(text_list) - 1:
-            story.append(Spacer(1, 10))
-            story.append(Paragraph("<hr width='50%' color='grey'/>", normal_style))
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("<hr width='60%' color='grey'/>", normal_style))
     
     # Watermarks and header/footer
     def add_watermarks(canvas, doc):
@@ -318,7 +330,7 @@ def main() -> None:
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
     print("StudyBuddy Bot is running... 🚀")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(allowed_updates=Update_ALL_TYPES)
 
 if __name__ == "__main__":
     main()
