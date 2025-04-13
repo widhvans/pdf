@@ -26,15 +26,37 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from config import BOT_TOKEN, WATERMARK_TEXT
+
+# Try to register DejaVuSans, fall back to Helvetica
+FONT_NORMAL = 'Helvetica'
+FONT_BOLD = 'Helvetica-Bold'
+FONT_AVAILABLE = False
+
+try:
+    # Use system DejaVuSans if available
+    font_path = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+    if os.path.exists(font_path):
+        pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+        FONT_NORMAL = 'DejaVuSans'
+        FONT_BOLD = 'DejaVuSans-Bold'
+        FONT_AVAILABLE = True
+        print("Loaded DejaVuSans for Hindi support.")
+    else:
+        print("DejaVuSans not found, using Helvetica with Hindi fallback.")
+except Exception as e:
+    print(f"Font error: {e}. Using Helvetica.")
 
 # Hindi keywords with colors
 HINDI_KEYWORDS = {
+    'प्रश्न': ('question', colors.darkblue),
+    'उत्तर': ('answer', colors.red),
     'परिभाषा': ('definition', colors.darkgreen),
     'उदाहरण': ('example', colors.forestgreen),
     'महत्वपूर्ण': ('important', colors.crimson),
-    'प्रश्न': ('question', colors.darkblue),
-    'उत्तर': ('answer', colors.red),
     'नोट्स': ('notes', colors.navy),
     'अध्याय': ('chapter', colors.navy),
     'विषय': ('topic', colors.navy),
@@ -45,84 +67,85 @@ HINDI_KEYWORDS = {
     'अभ्यास': ('exercise', colors.blue),
 }
 
-# Motivational quotes
-QUOTES = [
-    "Keep pushing—you’ve got this! 💪",
-    "Every note you take is a step to success! 🌟",
-    "Study hard, shine bright! ✨",
-    "Your future self will thank you! 🚀",
+# Motivational badges
+BADGES = [
+    "Brain Buster! 🧠",
+    "Knowledge King! 👑",
+    "Quiz Wizard! 🪄",
+    "Study Star! ⭐",
 ]
 
-# Escape Unicode for Hindi
-def escape_unicode(text):
-    return text.encode('utf-8').decode('utf-8')
-
-# Chunk long text
-def chunk_text(text, max_chars=80):
-    words = text.split()
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    for word in words:
-        word_length = len(word)
-        if current_length + word_length + 1 > max_chars:
-            chunks.append(' '.join(current_chunk))
-            current_chunk = [word]
-            current_length = word_length
-        else:
-            current_chunk.append(word)
-            current_length += word_length + 1
-    if current_chunk:
-        chunks.append(' '.join(current_chunk))
-    return chunks
+# Parse slide structure
+def parse_slide(text):
+    slide = {'number': '', 'title': '', 'content': [], 'layout': '', 'visual': ''}
+    lines = text.split('\n')
+    current_section = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('#### Slide'):
+            slide['number'] = line.replace('#### ', '').strip()
+        elif line.startswith('- Title:'):
+            slide['title'] = line.replace('- Title:', '').strip()
+        elif line.startswith('- Content:'):
+            current_section = 'content'
+        elif line.startswith('- Layout:'):
+            current_section = 'layout'
+            slide['layout'] = line.replace('- Layout:', '').strip()
+        elif line.startswith('- Visual:'):
+            current_section = 'visual'
+            slide['visual'] = line.replace('- Visual:', '').strip()
+        elif current_section == 'content' and line.startswith('  -'):
+            slide['content'].append(line[4:].strip())
+    return slide
 
 # Conversation state
 INPUT_TEXT = 1
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['text_list'] = []
-    context.user_data['key_points'] = 0
+    context.user_data['question_count'] = 0
     context.user_data['pdf_filename'] = f"study_notes_{update.message.from_user.id}.pdf"
     await update.message.reply_text(
-        "Welcome to StudyBuddy PDF Bot! 📚🔥\n"
-        "Drop your study notes (Hindi, English, whatever!).\n"
-        "Use *text* for highlights, # for headings, - for lists, or keywords like 'परिभाषा'.\n"
-        "Builds a killer PDF instantly. /finish to download, /cancel to reset.\n"
-        "Pro tip: Try Hindi keywords for colorful flair!"
+        "Welcome to StudyBuddy Quiz Bot! 📚🎉\n"
+        "Send your quiz slides (Hindi, English, anything!).\n"
+        "Format like: #### Slide X, Title, Question, Options, Answer.\n"
+        "PDF builds instantly—gorgeous and smart. /finish to download, /cancel to reset.\n"
+        "Get ready for a study glow-up!"
     )
     return INPUT_TEXT
 
 async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_text = escape_unicode(update.message.text)
-    context.user_data['text_list'].append((len(context.user_data['text_list']) + 1, user_text))
-    
-    if any(keyword.lower() in user_text.lower() for keyword in HINDI_KEYWORDS) or '*' in user_text:
-        context.user_data['key_points'] += 1
+    user_text = update.message.text
+    context.user_data['text_list'].append(user_text)
+    if 'प्रश्न' in user_text.lower():
+        context.user_data['question_count'] += 1
     
     try:
-        generate_pdf(context.user_data['text_list'], context.user_data['pdf_filename'], context.user_data['key_points'])
-        await update.message.reply_text("Locked into your PDF! Keep going or /finish to snag it.")
+        generate_pdf(context.user_data['text_list'], context.user_data['pdf_filename'], context.user_data['question_count'])
+        await update.message.reply_text("Slide added to your quiz PDF! Keep it coming or /finish to grab it.")
     except Exception as e:
-        await update.message.reply_text(f"PDF hiccup: {str(e)}. Try again!")
+        await update.message.reply_text(f"PDF glitch: {str(e)}. Try again!")
     
     return INPUT_TEXT
 
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     pdf_filename = context.user_data.get('pdf_filename')
     if not context.user_data.get('text_list') or not os.path.exists(pdf_filename):
-        await update.message.reply_text("Nothing to show yet! Add notes or /cancel.")
+        await update.message.reply_text("No slides yet! Add some or /cancel.")
         return INPUT_TEXT
     
     try:
         with open(pdf_filename, 'rb') as pdf_file:
             await update.message.reply_document(
                 document=pdf_file,
-                filename="YourStudyNotes.pdf",
-                caption="Your study notes are FIRE! 🔥 Start fresh with /start."
+                filename="YourQuizSlides.pdf",
+                caption="Your quiz slides are pure 🔥! Start again with /start."
             )
         os.remove(pdf_filename)
         context.user_data['text_list'] = []
-        context.user_data['key_points'] = 0
+        context.user_data['question_count'] = 0
     except Exception as e:
         await update.message.reply_text(f"Error sending PDF: {str(e)}")
     
@@ -133,11 +156,11 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if os.path.exists(pdf_filename):
         os.remove(pdf_filename)
     context.user_data['text_list'] = []
-    context.user_data['key_points'] = 0
-    await update.message.reply_text("Slate cleaned! Kick off with /start! 🚀")
+    context.user_data['question_count'] = 0
+    await update.message.reply_text("All cleared! Hit /start to make new magic! 🚀")
     return ConversationHandler.END
 
-def generate_pdf(text_list, filename, key_points):
+def generate_pdf(text_list, filename, question_count):
     doc = SimpleDocTemplate(
         filename,
         pagesize=letter,
@@ -151,12 +174,12 @@ def generate_pdf(text_list, filename, key_points):
     styles = getSampleStyleSheet()
     
     # Font size logic
-    total_chars = sum(len(text) for _, text in text_list)
+    total_chars = sum(len(text) for text in text_list)
     base_font_size = 18 if total_chars < 200 else 16 if total_chars < 400 else 14
     
     normal_style = ParagraphStyle(
         name='NormalCustom',
-        fontName='Helvetica',
+        fontName=FONT_NORMAL,
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.black,
@@ -165,7 +188,7 @@ def generate_pdf(text_list, filename, key_points):
     )
     bold_style = ParagraphStyle(
         name='BoldCustom',
-        fontName='Helvetica-Bold',
+        fontName=FONT_BOLD,
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.black,
@@ -173,50 +196,68 @@ def generate_pdf(text_list, filename, key_points):
     )
     heading_style = ParagraphStyle(
         name='HeadingCustom',
-        fontName='Helvetica-Bold',
-        fontSize=base_font_size + 6,
-        leading=base_font_size + 12,
+        fontName=FONT_BOLD,
+        fontSize=base_font_size + 8,
+        leading=base_font_size + 14,
         textColor=colors.navy,
-        spaceAfter=14,
-        spaceBefore=14,
+        spaceAfter=16,
+        spaceBefore=16,
+        backColor=colors.lightcyan,
+        borderPadding=5,
+        borderWidth=1,
+        borderColor=colors.cyan,
     )
     highlight_style = ParagraphStyle(
         name='HighlightCustom',
-        fontName='Helvetica-Bold',
+        fontName=FONT_BOLD,
         fontSize=base_font_size,
         leading=base_font_size + 8,
         textColor=colors.darkred,
+        backColor=colors.neonyellow,
+        spaceAfter=12,
+        borderPadding=6,
+        borderWidth=1.5,
+        borderColor=colors.cyan,
+    )
+    answer_style = ParagraphStyle(
+        name='AnswerCustom',
+        fontName=FONT_BOLD,
+        fontSize=base_font_size + 2,
+        leading=base_font_size + 10,
+        textColor=colors.red,
         backColor=colors.lightyellow,
         spaceAfter=12,
-        borderPadding=5,
-        borderWidth=1.2,
-        borderColor=colors.grey,
-    )
-    formula_style = ParagraphStyle(
-        name='FormulaCustom',
-        fontName='Helvetica-Bold',
-        fontSize=base_font_size,
-        leading=base_font_size + 8,
-        textColor=colors.darkorange,
-        backColor=colors.lightgrey,
-        spaceAfter=12,
-        borderPadding=5,
-        borderWidth=1,
-        borderColor=colors.black,
+        borderPadding=6,
+        borderWidth=2,
+        borderColor=colors.red,
         alignment=1,
+    )
+    visual_style = ParagraphStyle(
+        name='VisualCustom',
+        fontName=FONT_NORMAL,
+        fontSize=base_font_size - 2,
+        leading=base_font_size + 4,
+        textColor=colors.grey,
+        spaceAfter=10,
+        alignment=0,
+        leftIndent=20,
     )
     cover_style = ParagraphStyle(
         name='CoverCustom',
-        fontName='Helvetica-Bold',
-        fontSize=36,
-        leading=42,
+        fontName=FONT_BOLD,
+        fontSize=38,
+        leading=44,
         textColor=colors.darkblue,
         alignment=1,
-        spaceAfter=30,
+        spaceAfter=32,
+        backColor=colors.lightgrey,
+        borderPadding=10,
+        borderWidth=2,
+        borderColor=colors.navy,
     )
-    checklist_style = ParagraphStyle(
-        name='ChecklistCustom',
-        fontName='Helvetica',
+    summary_style = ParagraphStyle(
+        name='SummaryCustom',
+        fontName=FONT_NORMAL,
         fontSize=base_font_size - 2,
         leading=base_font_size + 4,
         textColor=colors.black,
@@ -225,170 +266,165 @@ def generate_pdf(text_list, filename, key_points):
     
     # Cover page
     story = [
-        Spacer(1, 2*inch),
-        Paragraph(escape_unicode("अध्ययन नोट्स | Study Notes"), cover_style),
+        Spacer(1, 1.5*inch),
+        Paragraph("अध्ययन नोट्स | Quiz Slides", cover_style),
         Spacer(1, 0.5*inch),
         Paragraph("Created with StudyBuddy Bot", normal_style),
         Spacer(1, 0.5*inch),
-        Paragraph(f"Key Points to Revise: {key_points}", normal_style),
+        Paragraph(f"Questions: {question_count}", normal_style),
         PageBreak()
     ]
     
     # Content
-    for section_number, text in text_list:
-        story.append(Paragraph(f"Section {section_number}", heading_style))
-        lines = text.split('\n')
+    answers_summary = []
+    for slide_text in text_list:
+        slide = parse_slide(slide_text)
+        slide_number = slide['number']
+        badge = random.choice(BADGES)
+        
+        # Slide header
+        story.append(Paragraph(f"{slide_number} - {badge}", heading_style))
+        if slide['title']:
+            title = slide['title']
+            for keyword in HINDI_KEYWORDS:
+                if re.search(rf'\b{keyword}\b', title, re.IGNORECASE):
+                    story.append(Paragraph(
+                        title,
+                        ParagraphStyle(
+                            name=f'Title_{keyword}',
+                            parent=heading_style,
+                            textColor=HINDI_KEYWORDS[keyword][1]
+                        )
+                    ))
+                    break
+            else:
+                story.append(Paragraph(title, heading_style))
+        
+        # Content
         in_list = False
         list_items = []
-        
-        for line in lines:
-            line = escape_unicode(line.strip())
-            if not line:
+        for content_line in slide['content']:
+            content_line = content_line.strip()
+            if not content_line:
+                continue
+            
+            is_answer = content_line.lower().startswith('उत्तर:')
+            is_question = content_line.lower().startswith('प्रश्न:')
+            is_option = re.match(r'^[A-D]\)', content_line)
+            
+            if is_answer:
                 if list_items:
                     formatted_items = []
                     for item in list_items:
-                        chunks = chunk_text(item)
-                        for chunk in chunks:
-                            is_formula = 'सूत्र' in chunk.lower() or '=' in chunk
-                            is_highlight = any(keyword.lower() in chunk.lower() for keyword in HINDI_KEYWORDS) or '*' in chunk
-                            formatted_chunk = format_text(chunk)
-                            style = formula_style if is_formula else highlight_style if is_highlight else normal_style
-                            for keyword, (en, color) in HINDI_KEYWORDS.items():
-                                if re.search(rf'\b{keyword}\b', chunk, re.IGNORECASE):
-                                    style = ParagraphStyle(
-                                        name=f'Custom_{keyword}',
-                                        parent=style,
-                                        textColor=color
+                        for keyword in HINDI_KEYWORDS:
+                            if re.search(rf'\b{keyword}\b', item, re.IGNORECASE):
+                                formatted_items.append(Paragraph(
+                                    item,
+                                    ParagraphStyle(
+                                        name=f'Item_{keyword}',
+                                        parent=normal_style,
+                                        textColor=HINDI_KEYWORDS[keyword][1]
                                     )
-                                    break
-                            formatted_items.append(Paragraph(formatted_chunk + (" Revise!" if is_highlight else ""), style))
+                                ))
+                                break
+                        else:
+                            formatted_items.append(Paragraph(item, normal_style))
                     story.append(ListFlowable(
                         [ListItem(item, leftIndent=12) for item in formatted_items],
                         bulletType='bullet',
-                        start='square',
-                        leftIndent=22,
-                    ))
-                    list_items = []
-                    in_list = False
-                story.append(Spacer(1, 10))
-                continue
-            
-            # Detect headings
-            is_heading = line.startswith('#')
-            clean_line = line[1:].strip() if is_heading else line
-            heading_match = None
-            for keyword in HINDI_KEYWORDS:
-                if re.match(rf'^{keyword}\b', clean_line, re.IGNORECASE):
-                    is_heading = True
-                    heading_match = keyword
-                    clean_line = f"{keyword} ({HINDI_KEYWORDS[keyword][0]})"
-                    break
-            
-            if is_heading:
-                style = heading_style
-                if heading_match:
-                    style = ParagraphStyle(
-                        name=f'Heading_{heading_match}',
-                        parent=heading_style,
-                        textColor=HINDI_KEYWORDS[heading_match][1]
-                    )
-                story.append(Paragraph(format_text(clean_line), style))
-                continue
-            
-            # Detect lists
-            if re.match(r'^[-*]|\d+\.|१\.|[क-ह]\.', line):
-                if not in_list:
-                    in_list = True
-                clean_line = re.sub(r'^[-*]\s|\d+\.\s|१\.\s|[क-ह]\.\s', '', line)
-                list_items.append(clean_line)
-            else:
-                if list_items:
-                    formatted_items = []
-                    for item in list_items:
-                        chunks = chunk_text(item)
-                        for chunk in chunks:
-                            is_formula = 'सूत्र' in chunk.lower() or '=' in chunk
-                            is_highlight = any(keyword.lower() in chunk.lower() for keyword in HINDI_KEYWORDS) or '*' in chunk
-                            formatted_chunk = format_text(chunk)
-                            style = formula_style if is_formula else highlight_style if is_highlight else normal_style
-                            for keyword, (en, color) in HINDI_KEYWORDS.items():
-                                if re.search(rf'\b{keyword}\b', chunk, re.IGNORECASE):
-                                    style = ParagraphStyle(
-                                        name=f'Custom_{keyword}',
-                                        parent=style,
-                                        textColor=color
-                                    )
-                                    break
-                            formatted_items.append(Paragraph(formatted_chunk + (" Revise!" if is_highlight else ""), style))
-                    story.append(ListFlowable(
-                        [ListItem(item, leftIndent=12) for item in formatted_items],
-                        bulletType='bullet',
-                        start='square',
+                        start='circle',
                         leftIndent=22,
                     ))
                     list_items = []
                     in_list = False
                 
-                # Render paragraph
-                chunks = chunk_text(line)
-                for chunk in chunks:
-                    is_formula = 'सूत्र' in chunk.lower() or '=' in chunk
-                    is_highlight = any(keyword.lower() in chunk.lower() for keyword in HINDI_KEYWORDS) or '*' in chunk
-                    formatted_chunk = format_text(chunk)
-                    style = formula_style if is_formula else highlight_style if is_highlight else normal_style
-                    for keyword, (en, color) in HINDI_KEYWORDS.items():
-                        if re.search(rf'\b{keyword}\b', chunk, re.IGNORECASE):
-                            style = ParagraphStyle(
-                                name=f'Custom_{keyword}',
-                                parent=style,
-                                textColor=color
-                            )
-                            break
-                    story.append(Paragraph(formatted_chunk + (" Revise!" if is_highlight else ""), style))
+                answer_text = content_line.replace('उत्तर:', '').strip()
+                answers_summary.append((slide_number, answer_text))
+                story.append(Paragraph(answer_text, answer_style))
+                story.append(Paragraph("Time to Answer: ~30 seconds", normal_style))
+                continue
+            
+            if is_question or is_option:
+                if list_items:
+                    formatted_items = []
+                    for item in list_items:
+                        for keyword in HINDI_KEYWORDS:
+                            if re.search(rf'\b{keyword}\b', item, re.IGNORECASE):
+                                formatted_items.append(Paragraph(
+                                    item,
+                                    ParagraphStyle(
+                                        name=f'Item_{keyword}',
+                                        parent=normal_style,
+                                        textColor=HINDI_KEYWORDS[keyword][1]
+                                    )
+                                ))
+                                break
+                        else:
+                            formatted_items.append(Paragraph(item, normal_style))
+                    story.append(ListFlowable(
+                        [ListItem(item, leftIndent=12) for item in formatted_items],
+                        bulletType='bullet',
+                        start='circle',
+                        leftIndent=22,
+                    ))
+                    list_items = []
+                    in_list = False
+                
+                if is_question:
+                    story.append(Paragraph(content_line, highlight_style))
+                else:
+                    list_items.append(content_line)
+            else:
+                list_items.append(content_line)
         
         if list_items:
             formatted_items = []
             for item in list_items:
-                chunks = chunk_text(item)
-                for chunk in chunks:
-                    is_formula = 'सूत्र' in chunk.lower() or '=' in chunk
-                    is_highlight = any(keyword.lower() in chunk.lower() for keyword in HINDI_KEYWORDS) or '*' in chunk
-                    formatted_chunk = format_text(chunk)
-                    style = formula_style if is_formula else highlight_style if is_highlight else normal_style
-                    for keyword, (en, color) in HINDI_KEYWORDS.items():
-                        if re.search(rf'\b{keyword}\b', chunk, re.IGNORECASE):
-                            style = ParagraphStyle(
-                                name=f'Custom_{keyword}',
-                                parent=style,
-                                textColor=color
+                for keyword in HINDI_KEYWORDS:
+                    if re.search(rf'\b{keyword}\b', item, re.IGNORECASE):
+                        formatted_items.append(Paragraph(
+                            item,
+                            ParagraphStyle(
+                                name=f'Item_{keyword}',
+                                parent=normal_style,
+                                textColor=HINDI_KEYWORDS[keyword][1]
                             )
-                            break
-                    formatted_items.append(Paragraph(formatted_chunk + (" Revise!" if is_highlight else ""), style))
+                        ))
+                        break
+                else:
+                    formatted_items.append(Paragraph(item, normal_style))
             story.append(ListFlowable(
                 [ListItem(item, leftIndent=12) for item in formatted_items],
                 bulletType='bullet',
-                start='square',
+                start='circle',
                 leftIndent=22,
             ))
+        
+        # Layout and visual
+        if slide['layout']:
+            story.append(Paragraph(f"Layout: {slide['layout']}", normal_style))
+        if slide['visual']:
+            story.append(Paragraph(f"📷 Visual: {slide['visual']}", visual_style))
+        
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("<hr width='85%' color='silver'/>", normal_style))
     
-    # Study planner
-    story.append(PageBreak())
-    story.append(Paragraph("Revision Checklist", heading_style))
-    checklist_data = [
-        ["✅ Key Point", "Revise By"],
-        *[[f"Point {i+1}", "____/__/__"] for i in range(key_points)]
-    ]
-    checklist_table = Table(checklist_data, colWidths=[4*inch, 2*inch])
-    checklist_table.setStyle(TableStyle([
-        ('FONT', (0, 0), (-1, -1), 'Helvetica', base_font_size - 2),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.navy),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-    ]))
-    story.append(checklist_table)
-    story.append(Spacer(1, 0.5*inch))
-    story.append(Paragraph("Pro Tip: Convert notes to audio for on-the-go revision! 🎧", normal_style))
+    # Summary page
+    if answers_summary:
+        story.append(PageBreak())
+        story.append(Paragraph("Quick Answer Recap", heading_style))
+        summary_data = [["Slide", "Answer"]] + [[slide_num, answer] for slide_num, answer in answers_summary]
+        summary_table = Table(summary_data, colWidths=[2*inch, 4*inch])
+        summary_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, -1), FONT_NORMAL, base_font_size - 2),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.navy),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(summary_table)
+        story.append(Spacer(1, 0.5*inch))
+        story.append(Paragraph("Revise these answers daily! 🎯", normal_style))
     
     # Watermarks and header/footer
     def add_watermarks(canvas, doc):
@@ -396,9 +432,9 @@ def generate_pdf(text_list, filename, key_points):
         canvas.setFillColor(colors.white)
         canvas.rect(0, 0, letter[0], letter[1], fill=1)
         
-        canvas.setFont('Helvetica', 7)
+        canvas.setFont(FONT_NORMAL, 7)
         canvas.setFillColor(colors.grey, alpha=0.3)
-        text_width = canvas.stringWidth(WATERMARK_TEXT, 'Helvetica', 7)
+        text_width = canvas.stringWidth(WATERMARK_TEXT, FONT_NORMAL, 7)
         spacing = 15
         for x in range(-50, int(letter[0]), int(text_width + spacing)):
             canvas.drawString(x, letter[1] - 20, WATERMARK_TEXT)
@@ -409,7 +445,7 @@ def generate_pdf(text_list, filename, key_points):
             canvas.drawString(y, -10, WATERMARK_TEXT)
         canvas.rotate(-90)
         
-        canvas.setFont('Helvetica', 34)
+        canvas.setFont(FONT_NORMAL, 34)
         canvas.setFillColor(colors.grey, alpha=0.07)
         canvas.rotate(45)
         canvas.drawCentredString(letter[0]/2, -letter[1]/2, WATERMARK_TEXT)
@@ -419,21 +455,16 @@ def generate_pdf(text_list, filename, key_points):
     def add_header_footer(canvas, doc):
         add_watermarks(canvas, doc)
         canvas.saveState()
-        canvas.setFont('Helvetica', 9)
+        canvas.setFont(FONT_NORMAL, 9)
         canvas.setFillColor(colors.grey)
-        canvas.drawString(1*inch, 0.5*inch, f"StudyBuddy Notes | Page {doc.page}")
-        canvas.drawRightString(letter[0] - 1*inch, 0.5*inch, random.choice(QUOTES))
+        canvas.drawString(1*inch, 0.5*inch, f"StudyBuddy Quiz | Page {doc.page}")
+        canvas.drawRightString(letter[0] - 1*inch, 0.5*inch, random.choice(BADGES))
         canvas.restoreState()
     
     doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
 
-def format_text(text):
-    formatted = re.sub(r'\*(.*?)\*', r'<b>\1</b>', text)
-    formatted = formatted.replace('&', '&').replace('<', '<').replace('>', '>')
-    return formatted
-
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Whoops, hit a snag! Retry or /start fresh. 📚")
+    await update.message.reply_text("Oops, hit a bump! Retry or /start fresh. 📚")
     print(f"Error: {context.error}")
 
 def main() -> None:
@@ -450,7 +481,7 @@ def main() -> None:
     )
     application.add_handler(conv_handler)
     application.add_error_handler(error_handler)
-    print("StudyBuddy Bot is LIVE! 🚀")
+    print("StudyBuddy Quiz Bot is LIVE! 🚀")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
